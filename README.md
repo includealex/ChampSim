@@ -42,7 +42,7 @@ Storage for these traces is kindly provided by Daniel Jimenez (Texas A&M Univers
 
 Execute the binary directly.
 ```
-$ bin/champsim --warmup_instructions 200000000 --simulation_instructions 500000000 ~/path/to/traces/600.perlbench_s-210B.champsimtrace.xz
+$ bin/champsim --warmup_instructions 10000000 --simulation_instructions 50000000 ~/path/to/traces/600.perlbench_s-210B.champsimtrace.xz
 ```
 
 The number of warmup and simulation instructions given will be the number of instructions retired. Note that the statistics printed at the end of the simulation include only the simulation phase.
