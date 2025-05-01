@@ -37,34 +37,43 @@ def parse_mpki_and_ipc(filename: Path):
 
     return cur_ipc, cur_mpki
 
+
 def plot_results(all_results, labels):
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
 
-    for results, label in zip(all_results, labels):
-        file_idxs = [el["file_idx"] for el in results]
-        mpkis = [el["mpki"] for el in results]
-        ipcs = [el["ipc"] for el in results]
+    num_labels = len(labels)
+    file_idxs = sorted(list(set(el["file_idx"] for results in all_results for el in results)))
+    bar_width = 0.8 / num_labels
 
-        res_gmean_mpki = np.round(gmean(mpkis), 3)
-        res_gmean_ipc = np.round(gmean(ipcs), 3)
+    for i, (results, label) in enumerate(zip(all_results, labels)):
+        mpki_dict = {el["file_idx"]: el["mpki"] for el in results}
+        ipc_dict = {el["file_idx"]: el["ipc"] for el in results}
 
-        ax1.plot(file_idxs, mpkis, marker='o', label=f"{label} (gmean MPKI={res_gmean_mpki})")
-        ax2.plot(file_idxs, ipcs, marker='s', label=f"{label} (gmean IPC={res_gmean_ipc})")
+        mpkis = [mpki_dict.get(idx, 0) for idx in file_idxs]
+        ipcs = [ipc_dict.get(idx, 0) for idx in file_idxs]
+
+        res_gmean_mpki = np.round(gmean([v for v in mpkis if v > 0]), 3)
+        res_gmean_ipc = np.round(gmean([v for v in ipcs if v > 0]), 3)
+
+        positions = np.arange(len(file_idxs)) + i * bar_width
+
+        ax1.bar(positions, mpkis, bar_width, label=f"{label} (gmean MPKI={res_gmean_mpki})")
+        ax2.bar(positions, ipcs, bar_width, label=f"{label} (gmean IPC={res_gmean_ipc})")
 
     ax1.set_ylabel("MPKI")
-    ax1.legend()
-    ax1.grid(True)
-
-    ax2.set_xlabel("File Index")
     ax2.set_ylabel("IPC")
+    ax2.set_xlabel("File Index")
+    ax1.set_title("MPKI Comparison")
+    ax2.set_title("IPC Comparison")
+    ax2.set_xticks(np.arange(len(file_idxs)) + bar_width * (num_labels - 1) / 2)
+    ax2.set_xticklabels(file_idxs)
+    ax1.legend()
     ax2.legend()
+    ax1.grid(True)
     ax2.grid(True)
-
-    plt.suptitle("Branch predictor policies comparison.")
     plt.tight_layout()
     plt.savefig("branch_comparison.png")
     plt.close()
-
 
 def run_analysis(input_dir: Path):
     input_files = os.listdir(input_dir)
@@ -103,7 +112,7 @@ if __name__ == "__main__":
     for dir_path in runs_dirs:
         results = run_analysis(dir_path)
         all_results.append(results)
-        labels.append(labels_correct[dir_path.name])
+        labels.append(labels_correct[dir_path.name] if dir_path.name in labels_correct.keys() else dir_path.name)
 
     plot_results(all_results, labels)
 
