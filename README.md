@@ -36,3 +36,39 @@ Expected results don't match current results. This could be on many reasons, for
 - If branches are mostly "true" or mostly "false" bimodal can perform very well;
 - Markov tables are too small;
 - The extra complexity of such predictor hurt more than help.
+
+
+# 2. L2 replacement policies.
+
+4 policies will be compared:
+-  LRU (Least Recently Used)
+Tracks when each cache block was last accessed. On eviction, it selects the block not used for the longest time.
+-  PLRU (Pseudo LRU)
+Uses a binary tree of bits to approximate LRU behavior with less metadata. Each bit points to the less recently used subtree.
+- LFU with Aging
+Each block has a usage counter. On hit, increment it; periodically, all counters are halved. This allows frequently used blocks to stay, but "forgets" old usage.
+- DRRIP (Dynamic Re-reference Interval Prediction)
+Uses a prediction counter to decide between SRRIP (static) and BRRIP (bimodal) policies dynamically. Balances recency vs. reuse behavior.
+
+## Expected result:
+
+| Policy    | Hit Rate (↑ = better)   |  
+| --------- | ----------------------- | 
+| LRU       | ↑↑ (on temporal reuse)  | 
+| PLRU      | ↑                       |
+| LFU_Aging | ↑↑ (on stable patterns) |
+| DRRIP     | ↑↑↑ (adaptive)          | 
+
+![replacement_comparison.png](replacement_comparison.png)
+
+
+## Results:
+
+| Policy    | gmean L2 Miss Rate  | 
+| --------- | ------------------- |
+| LRU       | 0.289  |
+| PLRU      | 0.381  |
+| LFU_Aging | 0.284  |
+| DRRIP     | 0.388  |
+
+Results are non-theoretically expected. LFU_aging and LRU are much better than DRRIP and PLRU. Looks like benchmarks data shows strong temporal and stable reuse.
