@@ -72,3 +72,54 @@ Uses a prediction counter to decide between SRRIP (static) and BRRIP (bimodal) p
 | DRRIP     | 0.388  |
 
 Results are non-theoretically expected. LFU_aging and LRU are much better than DRRIP and PLRU. Looks like benchmarks data shows strong temporal and stable reuse.
+
+# 3. Theoretical minimum.
+
+## Introduction:
+
+#### 1. Formulas for Performance, Power/Dynamic Power:
+
+##### Golden rule of CS:
+```math
+Performance = \dfrac{1}{Time} = \dfrac{1}{N_{instrs} \cdot CPI \cdot T_{cycle}} = \dfrac{1}{N_{instrs}} \cdot IPC \cdot f,
+```
+here $`N_{instrs}`$ is number of instructions, $`IPC`$ is number of instructions per cycle and $`f`$ is a frequency. $`N_{instrs}`$ parameter depends on SW algorithms, ISA, while $`f`$ depends on better circuits, transistors.
+
+```math
+Power = Power_{dynamic} + Power_{static} = C \cdot V^2 \cdot f + leakage,
+```
+here $`C`$ is capacitance, $`V`$ is voltage and $`f`$ is a frequency
+
+#### 2. Moore's law and Dennard scaling:
+
+##### Moore's Law(1965): The number of transistors on integrated circuits doubles approximately every 18 months(from 1975, it's 2 years).
+That is to say - tech advancements allow to increase transistor's resolution without increasing cost. Number of transistors increases, while absolute size of die doesn't change.
+
+##### Dennard scaling(1974): With each technology generation, as transistors get smaller, power consumption per unit area remains the same. Both voltage and current scale downward with transistor length.
+Transistors size and voltage and power decrease proportionally. Power density remains the same. Thus we could increase frequency without thermal issues.
+
+#### 3. Dennard scaling ending(2005).
+Ended due to physical limitations: voltage could not be reduced as fast as transistor sizes → density increase → thermal issues.
+
+After Dennard scaling ending, developers began to look for alternative ways of performance improvement, such as multicore architectures, improved parallelism, and the use of specialized processors(GPU).
+
+#### 4. Bypassing/Data forwarding optimization.
+Let's take a look into these 2 instructions coming one after another:
+```
+i1. add x2, x1, x0
+i2. add x3, x2, x4
+```
+After `execution` stage of `i1`, we already know the value of `x2`. Thus we can optimize and bypass the value of `x2`, without waiting for `writeback` stage. Moreover, it decreases the amount of stalls.
+
+Use the value before it is written back to register file. `Forwarding Unit` implementation needed for such optimization to work in the pipeline [(simplest pipeline with Forwarding Unit exapmle)](theor_min_images/01.04.Pipeline_with_Forwarding_Unit.jpg).
+
+#### 5. Instruction-Level Parallelism(ILP) and optimisations for ILP increase.
+Instruction-Level Parallelism (ILP) refers to the ability of a processor to execute multiple instructions simultaneously.
+
+Here are optimisations listed:
+
+- 1. Superscalar architecture. Such architecture allows multiple instructions to be issued and executed in parallel during a single clock cycle. This is achieved by having multiple execution units within the processor, such as ALUs, FPUs, and load/store units.
+
+- 2. VLIW (Very Long Instruction Word). VLIW architecture bundles multiple operations into a single long instruction word that is executed in parallel.
+
+- 3. Vector CPUs. Vector CPUs are designed to perform operations on entire arrays or vectors of data in a single instruction. 
