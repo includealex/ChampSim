@@ -123,3 +123,87 @@ Here are optimisations listed:
 - 2. VLIW (Very Long Instruction Word). VLIW architecture bundles multiple operations into a single long instruction word that is executed in parallel.
 
 - 3. Vector CPUs. Vector CPUs are designed to perform operations on entire arrays or vectors of data in a single instruction. 
+
+## Out-of-Order:
+
+#### 1. Reorder Buffer (ROB):
+
+In-Order Superscalar processors are limited by dependency stalls. Thus Out-of-Order(O3) CPU appeared - execute independent instructions out of program order. To execute them, instructions are put into buffer (which is ROB). Then those instructions are checked for dependencies, and independent will be executed.
+
+#### 2. Why not huge ROB (1e4 cells) if we have enough power/area to be occupied?
+
+ROB has it's limitations - branches and exceptions. Branches are resolved with branch predictors, but there still exist a probability of N_th instruction removal. For instance, if branch predictor has accuracy `90%`, the probability of `100th` instruction not to be removed will be `12%`. If any exception occurs - the fault will be handled, but the ROB will be flushed. Firstly, re-fetching will take a lot of time, if buffer is huge. Secondly, there are 2 searches: at allocation(per instruction) - identifying producers of the instruction sources; at scheduling(per cycle) - to identify ready instructions and send them to execution. These 2 searches loose potential performance usually, if ROB is too huge - performance lost is even bigger.
+
+#### 3. Eliminating False/Anti- Dependencies in registers. Register Aliases Table(RAT):
+
+Let's take a look into these 2 instructions coming one after another:
+```
+i1. r1 <- r4 / r7
+i2. r8 <- r1 + r2
+i3. r1 <- r5 + 1
+i4. r6 <- r6 - r3
+i5. r6 <- load[r1 + r6]
+i6. r7 <- r8 * r4
+```
+
+It's easy to note that `r1` from `i3` can be executed independently from `r1` from `i1` and `i2`. ISA registers number limitation can be fixed with simplest renaming due to the fact that HW can contain more registers in the speculative state than ISA. For instance, we can make such a renaming and now execute `i3` independently from `i1`.
+```
+i1. pr1 <- pr4 / pr7
+i2. pr8 <- pr1 + pr2
+i3. pr10 <- pr5 + 1
+i4. pr6 <- pr6 - pr3
+i5. pr6 <- load[pr10 + pr6]
+i6. pr7 <- pr8 * pr4
+```
+
+Renaming has requirements: producer and all its consumers are renamed to the same physical register; producer writes to the original arch register at retirement. When renaming, results should be put into RAT. Each ROB entry saves previous register alias, which is history. On flush, ROB restores history.
+
+#### 4. Scheduler Queue:
+
+ROB has 2 complex searches: at allocation(per instruction) - identifying producers of the instruction sources; at scheduling(per cycle) - to identify ready instructions and send them to execution. For preventing potential performance loss, it would be better to check only not completed instructions. They are put into Scheduler Queue, which is smaller than ROB size (20-30%).
+
+Instructions are deleted from the ROB during the commit stage after they have been executed and when it is their turn in program order. They can also be deleted during flush operations due to exceptions or mispredictions. Instructions are deleted from the Scheduler Queue when they are dispatched to execution units for execution, based on operand availability and resource availability.
+
+#### 5. Memory Disambiguation problem and how to solve it:
+
+O3 engine tracks registers dependency, but not through memory:
+```
+i1. Mem[r1] <- ...
+...
+iN. ... <- Mem[r1]
+```
+If `iN` executes before `i1`, wrong value from memory will be read.
+
+Moreover, such a case can appear, where `r2` and `r3` are the same values:
+```
+i1. Mem[r2] <- ...
+...
+iN. ... <- Mem[r3]
+```
+
+This is the Memory Disambiguation problem. How to solve it? Rules should be applied to the store/load instructions.
+Architecturally:
+- Implement Load and Store Buffers. Same as Scheduler Queue, but for Load/Stores only.
+- Apply store forwarding. Load can take data of the producing store bypassing cache.
+Rules for stores and loads + false dependencies resolution needed:
+Stores: 1. Never performed speculatively; 2. Never re-ordered among themselves; 3. Store commits its value to cache post retirement.
+Loads: 1. No dependency from store - execute ASAP. 2. Forwardable dependency from store - take data from that store. 3. Non-forwardable dependency from store - wait for the cache update.
+
+#### 6. Store instruction -> STA (store address calculation) and STD(store data calculation):
+
+False dependency: Data is not required to check if store and load have dependency. Address is calculated when store is executed. But store is sent to execution only all its sources (including both address and data) are ready to execute.
+
+```
+i1. r1 <- ...
+i2. r2 <- ...
+i3. Mem[r1] <- r2
+...
+iN. ... <- Mem[r3]
+```
+`i3` and `iN` don't overlap! But `iN` waits for `i2`. That's false dependency.
+
+To remove false dependencies in case of absence of overlapping, store instruction is executed in 2 steps: STA; STD. Load is waiting for STD only if overlapped with STA.
+
+#### 7. Load speculation optimisation:
+
+Load has to wait for older STAs. Same to the branches speculation, we can speculate on store-load dependencies adding correctness check of load speculation in the LB and SB. That is called speculation prediction. History should be tracked too (as same as it is in branch prediction). Speculation prediction policies can differ in working with unknown loads. Unknown loads can be assumed as speculative or as non-speculative. Speculative unknown loads need "blacklist", where incorrect assumptions PC should be put. Rollbacks give big overhead. If unknown loads are non-speculative, "whitelist" needed with correct assumptions(no STAs to wait). Cons are that loads wait STAs at the beginning, which is overhead. 
