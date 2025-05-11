@@ -207,3 +207,90 @@ To remove false dependencies in case of absence of overlapping, store instructio
 #### 7. Load speculation optimisation:
 
 Load has to wait for older STAs. Same to the branches speculation, we can speculate on store-load dependencies adding correctness check of load speculation in the LB and SB. That is called speculation prediction. History should be tracked too (as same as it is in branch prediction). Speculation prediction policies can differ in working with unknown loads. Unknown loads can be assumed as speculative or as non-speculative. Speculative unknown loads need "blacklist", where incorrect assumptions PC should be put. Rollbacks give big overhead. If unknown loads are non-speculative, "whitelist" needed with correct assumptions(no STAs to wait). Cons are that loads wait STAs at the beginning, which is overhead. 
+
+## Branch Prediction:
+
+#### 1. Branch Target Buffer (BTB) - what information does it store?
+
+BTB is used for predicting direct and indirect branches, being organized as a cache. IP(for found branches) -> PC.
+
+#### 2. State-of-the-art conditional branch predictor at 2025 (before 6th Championship Branch Prediction (CBP2025)):
+
+This is `PPM` predictor:
+
+<img src="theor_min_images/03.02.PPM.png" alt="ppm_predictor" width="50%"/>
+
+State-of-the-art predictors are based on `TAGE`(TAgged GEometric history length) nowadays: `original TAGE`, `BATAGE`, `TAGE-SC-L`: 
+
+<img src="theor_min_images/03.02.TAGE.png" alt="tage_predictor" width="50%"/>
+
+`TAGE` is N-component PPM-like predictor, but with its own key features:
+- The history lengths used for tables `T1`, `T2`, ... have the form $`L(i)=a^{i-1} \cdot L(1)`$, forming geometric series.
+- Consideration of not only the longest matching path(pred), but also the second longest matching (altpred);
+- For tackling the cold counter problem, a tiny meta-predictor selects the final prediction beteen pred and altpred(depedns on the state of pred up/down counter);
+- Each tagged entry has `u` counter;
+- Pred entry is considered useful when it prevents the occurence of misprediction;
+- `u` counter is decreased periodically (needed for dead entries to be excluded);
+- `TAGE` allocates a single entry per misprediction.
+
+#### 3. Real-life task:
+
+A processor uses a two-level adaptive conditional branch predictor:
+- Global history: The predictor keeps track of the directions of the last branches using a 3-bit Branch History Register (BHR).
+- Pattern History Table (PHT): It has 8 entries (since $`2^3 = 8`$, one for each possible BHR pattern).
+- Each PHT entry is a 2-bit saturating counter, initially set to "Strongly not taken" (00).
+
+To calculate the misprediction rate of this predictor for the following loop:
+```cpp
+for (int i = 0; i < 100; ++i)
+    std::cout << i << "\n";
+```
+1. Global history (BHR) tracks the last 3 branch outcomes. => It's a 3-bit shift register.
+2. PHT counters are indexed by BHR.
+3. Possible states for PHT entry are `"Strongly not taken"(00)`, `"Weakly not taken"(01)`, `"Weakly taken"(10)`, `"Strongly taken"(11)`.
+
+Current program has 101 branches. Assuming that branch sequence got from the compiler is: 1, 1, 1, ..., 1 (100 times), then 0, at exit. Let's build the table:
+
+| Iteration (i) | BHR (3-bit) | PHT Entry (BHR)  | Prediction | Actual Outcome | Misprediction? | Update PHT (BHR) | Update BHR (Shift)           |
+|:-------------:|:-----------:|:----------------:|:----------:|:--------------:|:--------------:|:----------------:|:----------------------------:|
+|             0 |         000 | 00 (Strongly NT) | 0          | 1              | +              | 00 -> 01         | 000 -> 001                   |
+|             1 |         001 | 00 (Strongly NT) | 0          | 1              | +              | 00 -> 01         | 001 -> 011                   |
+|             2 |         011 | 00 (Strongly NT) | 0          | 1              | +              | 00 -> 01         | 011 -> 111                   |
+|             3 |         111 | 00 (Strongly NT) | 0          | 1              | +              | 00 -> 01         | 111 -> 111                   |
+|             4 |         111 | 01 (Weakly NT)   | 0          | 1              | +              | 01 -> 10         | 111 -> 111                   |
+|             5 |         111 | 10 (Weakly T)    | 1          | 1              | -              | 10 -> 11         | 111 -> 111                   |
+|             6 |         111 | 11 (Strongly T)  | 1          | 1              | -              | 11 -> 11         | 111 -> 111                   |
+| ... (7 to 99) | ...         | ...              | ...        | ...            | -              | 11 -> 11         | 111 -> 111                   |
+|           100 |         111 | 11 (Strongly T)  | 1          | 0              | +              | 11 -> 10         | 111 -> 110                   |
+
+Thus, number of mispredictions for given program is equal to `6`.
+```math
+Misprediction\space{}rate = \dfrac{6}{101} \approx 5.94\%
+```
+
+#### 4. Relationship between two-level adaptive branch predictor and the PPM (Prediction by Partial Matching) algorithm:
+
+For understanding this relationship, is would be better to compare two-leevel predictor with _m_ bit history and Markov predictor of order _m_:
+
+<img src="theor_min_images/03.04.2lp_vs_ppm.png" alt="2lpvsppm" width="50%"/>
+
+Both algorithms are very close and adapt dynamically to observed behaviour. But they differ in 2nd and 3rd steps of algorithm.
+
+#### 5. Perceptron-based branch predictor:
+
+Perceptron-based predictors are good at combining inputs of different types. `Statistical Corrector` predictor, which is perceptron-based is created for better prediction class of statistically biased branches. The correction aims at detecting the unlikely prediction and revert them.
+
+<img src="theor_min_images/03.05.stat_corrector.png" alt="statcorr" width="40%"/>
+
+#### 6. Types of conditional transitions are difficult to predict for the TAGE predictor:
+
+Limitations of `TAGE`-like predictors:
+- data dependent branches;
+- weakly correlated branches;
+- cold counter problem;
+- too short history to find correlation.
+
+#### 7. Briefly about "Branch Prediction is Not a Solved Problem":
+
+- IPC can increase up to 20% if addressing remaining mispredictions.
+- Two primary reasons for mispredictions are: systematic H2P branches and rare branches with low dynamic execution.
