@@ -294,3 +294,69 @@ Limitations of `TAGE`-like predictors:
 
 - IPC can increase up to 20% if addressing remaining mispredictions.
 - Two primary reasons for mispredictions are: systematic H2P branches and rare branches with low dynamic execution.
+
+## Memory
+
+#### 1. Difference between Fully Associative, Direct mapped and Set-Associative caches:
+
+<img src="theor_min_images/04.01.FA_DM_SA.png" alt="caches_comparison" width="100%"/>
+
+#### 2. Translation Lookaside Buffer(TLB) - what is it for:
+
+TLB is used for fastening virtual address translation into physical. Usually TLB caches have 64-256 entries, are 2-8 way associative. TLB access time is faster than L1 cache access time.
+
+#### 3. Granularity of replacement policies:
+
+The decision to predict whether any given line should be allowed to stay in cache is re-evaluated during cache line lifetime. Granularity answers 2 questions: 1. At what granularity are lines distinguished at the time of insertion? Are all cache lines treated the same or not? Granularity of cache replacement policies: Coarse-grained or Fine-grained.
+
+#### 4. Common cache access patterns:
+
+This is the list of common cache access patterns: `Recency-Friendly`, `Thrashing`, `Streaming` and `Mixed`:
+
+<img src="theor_min_images/04.04.Common_Cache_Access_Patterns.png" alt="cache_accesses" width="50%"/>
+
+Here $`a_i`$ and $`b_i`$ represent cache line access, $`N`$ is sequence repetion, $`P_\varepsilon(a_1,...,a_k)`$ is temporal sequence that occurs with probability $`P_\varepsilon`$.
+
+#### 5. In what way is LRU Insertion Policy (LIP) better than the classic LRU replacement policy?
+
+LIP is based on LRU, but LIP promotion has MRU policy:
+
+| Insertion    | Promotion    | Aging                       | Victim Selection |
+|--------------|--------------|-----------------------------|------------------|
+| LRU position | MRU position | Move 1 position towards LRU | LRU position     |
+
+LIP improves upon classic LRU by reducing cache pollution for one-time accesses while preserving LRU’s benefits for reused data. It’s particularly effective in workloads where classic LRU suffers from **thrashing** (e.g., large datasets with irregular reuse).
+
+#### 6. Why is BRRIP replacement policy resistant to scanning and thrashing patterns?
+
+BRRIP is a probabilistic variant of RRIP (Re-Reference Interval Prediction) that:
+- Assigns a re-reference interval value (RRPV) to each cache line, predicting how soon it will be reused;
+- Uses bimodal insertion to handle both reused data and scanning/thrashing patterns.
+
+| Insertion    | Promotion    | Aging                       | Victim Selection |
+|--------------|--------------|-----------------------------|------------------|
+| RRPV = 3 for most insertions, RRPV=2 with probability $`\varepsilon`$ | RRPV = 0 | Increment all RRPVs (if no line with RRPV = 3) | RRPV = 3     |
+
+How BRRIP resists **scanning**, which is one-time sequential accesses problem:
+    - Most new blocks are inserted with RRPV = "Distant" (RRPV=3). This marks them as low priority for retention, so they are evicted quickly.
+    - Probabilistic Bimodal Insertion. A small fraction $`\varepsilon`$ of new blocks are inserted as "Near" (RRPV = 2) to avoid pathological corner cases. This prevents complete starvation of new data in edge cases.
+
+How BRRIP resists **thrashing**, which is repeated conflicts:
+    - On a cache hit, the block’s RRPV is decremented, signaling it may be reused soon. Blocks with RRPV = 0 are "high priority" and protected from eviction.
+    - When eviction is needed, BRRIP evicts blocks with the highest RRPV. Thrashing patterns will have their RRPVs decremented, protecting them from eviction.
+
+#### 7. What is the key idea behind the Hawkeye and Mockingjay replacement policies?
+
+Key idea is that it's possible to apply `Belady's MIN` algorithm to the memory references of the past, using OPTgen. Hawkey/Mockingjay compute the optimal solution for a few sampled sets, and it introduces the OPTgen algo that computes the same answer as `Belady's MIN` policy for these sampled sets. OPTgen determines the lines that would have been cached if the MIN policy had been used.
+
+#### 8. Spatial Memory Streaming (SMS) prefetcher - how does it work?
+
+<img src="theor_min_images/04.08.spatial_memory_streaming.png" alt="cache_accesses" width="50%"/>
+
+The Spatial Memory Streaming (SMS) prefetcher works by tracking spatial access patterns within memory regions. Here’s how it works:
+
+- Trigger Access: An instruction (e.g., $`PC_1`$) accesses an address (0x24D8 with $`Offset_1`$).
+
+- Pattern Recording: The PHT logs the access pattern (e.g., 0,1,0,…,0,1) for this address, marking which cache lines are accessed within a spatial region.
+
+- Prefetch Generation: When the same $`PC_1`$ accesses the region again, SMS replays the recorded pattern and prefetches cache lines flagged as likely (1 in the bitmask) future accesses.
