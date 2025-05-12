@@ -360,3 +360,102 @@ The Spatial Memory Streaming (SMS) prefetcher works by tracking spatial access p
 - Pattern Recording: The PHT logs the access pattern (e.g., 0,1,0,…,0,1) for this address, marking which cache lines are accessed within a spatial region.
 
 - Prefetch Generation: When the same $`PC_1`$ accesses the region again, SMS replays the recorded pattern and prefetches cache lines flagged as likely (1 in the bitmask) future accesses.
+
+## Advanced Optimizations & Parallelism
+
+#### 1. What complex cases are Execution-based Prefetchers intended to cover?
+
+For prefetchings data, a piece of code can be pre-executed. That is the main idea of Execution-based Prefetchers. Here is a list of complex cases covered by such prefetchers:
+
+- Multiple pointer chains;
+- Non-Affine Array Accesses;
+- Multiple procedure calls;
+- Multiple Control-Flow Paths.
+
+<img src="theor_min_images/05.01.pre_execution_based_issues.png" alt="pre-execution-based-prefetchers-issues" width="70%"/>
+
+#### 2. What is Value Prediction optimization? For which instructions is this optimization typically used in modern processors?
+
+Value prediction is the technique is designed to increase instruction-level parallelism by breaking data dependencies between instructions. Value prediction attempts to guess the result of an instruction so that subsequent instructions that depend on this value can proceed without stalling. Value prediction can be implemented via speculative thread.
+
+Typical usage instructions:
+- Load Instructions. Example: `x = arr[0]`; repeatedly returns the same value in loops;
+- ALU Operations. For instance, `sum = sum + arr[i]` is often predictable.
+
+#### 3. What is the performance gain achieved by using Value Prediction optimization?
+
+Value Prediction can significantly increase ILP by allowing dependent instructions to execute speculatively before the actual values are computed. The performance gain from VP depends on several factors: accuracy, pipeline depth, app/benchmark. If app needs high ALU usage - VP can benefit a lot. Theoretical speedups of `>10%` have been shown in simulations.
+
+Results from the paper `Using Value Prediction to Increase the Power of Speculative Execution Hardware`:
+
+<img src="theor_min_images/05.03.vpilp.png" alt="VP_ILP" width="50%"/>
+
+
+#### 4. What is the difference between Value Prediction and Branch Prediction in terms of the need/expected positive effect of the prediction and subsequent speculative execution in case of low confidence in the accuracy of the prediction?
+
+Value prediction is about data prediction, branch prediction is about control flow. Value prediction is high-risk, high-reward: it can unlock parallelism but requires high accuracy to justify speculation. Branch prediction is low-risk, always-on: even imperfect predictions outperform stalling. More detaily in table:
+
+| Feature                    | Value Prediction                                                           | Branch Prediction                                                             |
+|:--------------------------:|:--------------------------------------------------------------------------:|:-----------------------------------------------------------------------------:|
+| Purpose                    | Breaks data dependencies by predicting operand values.                     | Breaks control dependencies by predicting if branch taken/not taken.          |
+| What is Predicted?         | Actual values.                                                             | Branch outcomes.                                                              |
+| Speculative Execution      | Optional.                                                                  | Mandatory.                                                                    |
+| Mispredict Penalty         | High (must squash dependent instructions + recover data state).            | Moderate (squash wrong-path instructions only).                               |
+| Prediction Accuracy Needed | High (>90%) to justify speculation.                                        | Still beneficial even at lower accuracy (modern predictors achieve >95%).     |
+| Example Use Case           | Predicting arr[i] in a loop with fixed stride.                             | Predicting loop exit conditions or if-else branches.                          |
+
+#### 5. Memory renaming optimisation:
+
+Memory Renaming is an optimization technique used in modern processors to avoid name dependencies between memory operations—specifically stores and loads—that might otherwise limit ILP.
+
+```
+A: *p = ...
+B: *q = ...
+C: ... = *p
+```
+Here sourcing store depends on value of `q`.
+
+<img src="theor_min_images/05.05.mem_renaming.png" alt="mem_renaming" width="30%"/>
+
+How does it work - applied rules for stores and loads:
+
+- Stores:
+```    
+if (not in Store/Load Cache) {
+    allocate store/load cache entry for store
+    allocate value file entry for store result
+    point store/load cache entry to value file entry
+}
+deposit store result into value file and memory
+```
+
+- Loads:
+```
+if (not in Store/Load Cache) {
+    allocate store/load cache entry for load
+    point store/load cache entry to value file entry of sourcing store
+    if no sourcing store, insert result of load into value file
+}
+return value file entry as load result
+```
+
+#### 6. Difference between Fine-Grained Multithreading, Coarse-Grained Multithreading and Simultaneous Multithreading.
+
+Key differences:
+- Fine-grained
+    - Cycle by cycle.
+- Coarse-grained
+    - Switch on event (for instance, cache miss);
+    - Switch on quantum/timeout.
+- Simultaneous
+    - Instructions from multiple threads executed concurrenty in the same cycle.
+
+|                                          | Fine-Grained Multithreading                                             | Coarse-Grained Multithreading      | Simultaneous Multithreading                                                                          |
+|------------------------------------------|-------------------------------------------------------------------------|------------------------------------|------------------------------------------------------------------------------------------------------|
+| Dependency Checking Between Instructions | No need to check                                                        | Per-thread only                    | Cross-thread                                                                                         |
+| Need for Branch Prediction Logic         | No need                                                                 | Can be used                        | Highly critical                                                                                      |
+| System Throughput Improvement            | Good                                                                    | Moderate                           | Best                                                                                                 |
+| Hardware Complexity                      | Extra HW complexity: multiple hardware contexts, thread selection logic | A lot of HW to save pipeline state | Very High                                                                                            |
+| Single-Thread Performance                | reduced                                                                 | Low single thread performance      | Can degrade                                                                                          |
+| Resource Contention                      | between threads in cache in memory                                      | Low                                | High                                                                                                 |
+| Thread Switching Overhead                | Minimal, but still remains                                              | Moderate                           | Utilization can be low if there are not enough instructions from a thread to "dispatch" in one cycle |
